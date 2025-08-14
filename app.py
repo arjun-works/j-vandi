@@ -213,75 +213,85 @@ def poc_data_upload():
         st.success(f"✅ {location_count} locations available in database")
     
     st.subheader("📤 Upload User Data")
-    st.write("Upload Excel file with user data (User, Area)")
-    
+    st.write("Upload Excel file with user data (User ID, Name, Area)")
+
+    # Download demo data button
+    demo_path = os.path.join(os.getcwd(), "demo_user_data.xlsx")
+    with open(demo_path, "rb") as f:
+        st.download_button("⬇️ Download Demo Excel", f, file_name="demo_user_data.xlsx", use_container_width=True)
+
+    # Button to use demo data directly
+    use_demo = st.button("Use Demo Data", key="use_demo_data")
+
     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
-    
+
+    # Load data from upload or demo
+    user_df = None
     if uploaded_file:
-        try:
-            # Read user data
-            user_df = pd.read_excel(uploaded_file)
-            
-            # Validate columns
-            if 'User' not in user_df.columns or 'Area' not in user_df.columns:
-                st.error("❌ Excel file must contain 'User' and 'Area' columns")
-                return
-            
-            st.subheader("📋 User Data Preview")
-            st.dataframe(user_df, use_container_width=True)
-            
-            # Enhance with coordinates
-            with st.spinner("🔍 Fetching coordinates from database..."):
-                enhanced_df, missing_locations = enhance_user_data_with_coordinates(user_df)
-            
-            if missing_locations:
-                st.warning(f"⚠️ Could not find coordinates for {len(missing_locations)} locations:")
-                for loc in missing_locations[:10]:  # Show first 10
-                    st.write(f"- {loc}")
-                if len(missing_locations) > 10:
-                    st.write(f"... and {len(missing_locations) - 10} more")
-            
-            if not enhanced_df.empty:
-                st.success(f"✅ Successfully found coordinates for {len(enhanced_df)} users")
-                
-                # Validate enhanced data has required columns for cab allocation
-                required_cols = {"User", "Area", "Latitude", "Longitude"}
-                if required_cols.issubset(enhanced_df.columns):
-                    # Run cab allocation logic (same as original)
-                    with st.spinner("🚕 Calculating cab allocation..."):
-                        result_df, cab_route_map_file = run_cab_allocation(enhanced_df)
-                    
-                    # Store results in session state
-                    st.session_state.cab_allocation_result = result_df
-                    st.session_state.cab_route_map_file = cab_route_map_file
-                    st.session_state.enhanced_user_data = enhanced_df
-                    
-                    st.success("✅ Cab Allocation Completed")
-                    
-                    # Show navigation buttons
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        if st.button("📊 View Cab Allocation", use_container_width=True):
-                            st.session_state.poc_page = "allocation"
-                            st.rerun()
-                    with col2:
-                        if st.button("🗺️ View Route Map", use_container_width=True):
-                            st.session_state.poc_page = "map"
-                            st.rerun()
-                    with col3:
-                        # Show Download Link for Excel
-                        output_excel = os.path.join("Output", "cab_allocation_output.xlsx")
-                        os.makedirs(os.path.dirname(output_excel), exist_ok=True)
-                        result_df.to_excel(output_excel, index=False)
-                        with open(output_excel, "rb") as f:
-                            st.download_button("⬇️ Download Excel", f, file_name="cab_allocation.xlsx", use_container_width=True)
-                else:
-                    st.error("❌ Could not process data - missing coordinate information")
+        user_df = pd.read_excel(uploaded_file)
+    elif use_demo:
+        user_df = pd.read_excel(demo_path)
+
+    if user_df is not None:
+        # Validate columns
+        required_cols = {"User ID", "Name", "Area"}
+        if not required_cols.issubset(user_df.columns):
+            st.error(f"❌ Excel file must contain columns: {list(required_cols)}")
+            return
+
+        st.subheader("📋 User Data Preview")
+        st.dataframe(user_df, use_container_width=True)
+
+        # Enhance with coordinates (using Area)
+        user_df_for_coords = user_df.rename(columns={"User ID": "User"})
+        with st.spinner("🔍 Fetching coordinates from database..."):
+            enhanced_df, missing_locations = enhance_user_data_with_coordinates(user_df_for_coords)
+
+        if missing_locations:
+            st.warning(f"⚠️ Could not find coordinates for {len(missing_locations)} locations:")
+            for loc in missing_locations[:10]:  # Show first 10
+                st.write(f"- {loc}")
+            if len(missing_locations) > 10:
+                st.write(f"... and {len(missing_locations) - 10} more")
+
+        if not enhanced_df.empty:
+            st.success(f"✅ Successfully found coordinates for {len(enhanced_df)} users")
+
+            # Validate enhanced data has required columns for cab allocation
+            required_cols2 = {"User", "Area", "Latitude", "Longitude"}
+            if required_cols2.issubset(enhanced_df.columns):
+                # Run cab allocation logic (same as original)
+                with st.spinner("🚕 Calculating cab allocation..."):
+                    result_df, cab_route_map_file = run_cab_allocation(enhanced_df)
+
+                # Store results in session state
+                st.session_state.cab_allocation_result = result_df
+                st.session_state.cab_route_map_file = cab_route_map_file
+                st.session_state.enhanced_user_data = enhanced_df
+
+                st.success("✅ Cab Allocation Completed")
+
+                # Show navigation buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("📊 View Cab Allocation", use_container_width=True):
+                        st.session_state.poc_page = "allocation"
+                        st.rerun()
+                with col2:
+                    if st.button("🗺️ View Route Map", use_container_width=True):
+                        st.session_state.poc_page = "map"
+                        st.rerun()
+                with col3:
+                    # Show Download Link for Excel
+                    output_excel = os.path.join("Output", "cab_allocation_output.xlsx")
+                    os.makedirs(os.path.dirname(output_excel), exist_ok=True)
+                    result_df.to_excel(output_excel, index=False)
+                    with open(output_excel, "rb") as f:
+                        st.download_button("⬇️ Download Excel", f, file_name="cab_allocation.xlsx", use_container_width=True)
             else:
-                st.error("❌ No valid location data found")
-                
-        except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
+                st.error("❌ Could not process data - missing coordinate information")
+        else:
+            st.error("❌ No valid location data found")
 
 def poc_allocation_management():
     """POC cab allocation management page"""
