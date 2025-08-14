@@ -216,41 +216,63 @@ def poc_data_upload():
     st.write("Upload Excel file with user data (User ID, Name, Area)")
 
 
-    # Ensure demo Excel file exists and is a valid .xlsx
+
     demo_path = os.path.join(os.getcwd(), "demo_user_data.xlsx")
-    if not os.path.exists(demo_path):
+    def generate_demo_excel():
+        sample_df = pd.read_excel('sample_data.xlsx', engine='openpyxl')
+        area_list = list(sample_df['Area'][:29])
         demo_data = {
-            "User ID": [f"U{str(i+1).zfill(3)}" for i in range(30)],
+            "User ID": [f"U{str(i+1).zfill(3)}" for i in range(29)],
             "Name": [n for n in [
                 "Arun", "Bala", "Chitra", "Deepak", "Elango", "Farah", "Ganesh", "Hema", "Irfan", "Janani",
                 "Karthik", "Lavanya", "Manoj", "Nisha", "Omkar", "Priya", "Quincy", "Raj", "Swetha", "Tarun",
-                "Usha", "Vikram", "Wasim", "Xavier", "Yamini", "Zara", "Anil", "Bhavana", "Chandan", "Divya"
+                "Usha", "Vikram", "Wasim", "Xavier", "Yamini", "Zara", "Anil", "Bhavana", "Chandan"
             ]],
-            "Area": [a for a in [
-                "Anna Nagar", "T Nagar", "Velachery", "Adyar", "Guindy", "Perungudi", "Thiruvanmiyur", "Ambattur", "Porur", "Sholinganallur",
-                "Medavakkam", "Chromepet", "Avadi", "KK Nagar", "Perambur", "Egmore", "Triplicane", "West Mambalam", "Virugambakkam", "Thoraipakkam",
-                "Adambakkam", "Thirumangalam", "Guindy", "Anna Nagar", "Velachery", "Adyar", "Perungudi", "Thiruvanmiyur", "Ambattur", "Porur"
-            ]]
+            "Area": area_list
         }
         demo_df = pd.DataFrame(demo_data)
         demo_df.to_excel(demo_path, index=False)
 
-    # Download demo data button
-    with open(demo_path, "rb") as f:
-        st.download_button("⬇️ Download Demo Excel", f, file_name="demo_user_data.xlsx", use_container_width=True)
 
-    # Button to use demo data directly
-    use_demo = st.button("Use Demo Data", key="use_demo_data")
+
+    # Single Download demo data button
+    if not os.path.exists(demo_path):
+        generate_demo_excel()
+    with open(demo_path, "rb") as f:
+        st.download_button("⬇️ Download Demo Excel", f, file_name="demo_user_data.xlsx", use_container_width=True, key="download_demo_excel")
+
+
+
+    # Single Use Demo Data button with session state (separate key for flag)
+    if 'use_demo_data_flag' not in st.session_state:
+        st.session_state.use_demo_data_flag = False
+
+    if st.button("Use Demo Data", key="use_demo_data"):
+        generate_demo_excel()
+        st.session_state.use_demo_data_flag = True
 
     uploaded_file = st.file_uploader("Upload Excel File", type=["xlsx"])
+
+
+    # If a file is uploaded, reset demo data flag and allocation result flag
+    if uploaded_file:
+        st.session_state.use_demo_data_flag = False
+        st.session_state.show_allocation_result = False
+
+    # If Use Demo Data is clicked, also reset allocation result flag
+    if st.session_state.use_demo_data_flag:
+        if 'show_allocation_result' in st.session_state:
+            st.session_state.show_allocation_result = False
 
     # Load data from upload or demo
     user_df = None
     if uploaded_file:
         user_df = pd.read_excel(uploaded_file)
-    elif use_demo:
+    elif st.session_state.use_demo_data_flag:
         user_df = pd.read_excel(demo_path)
 
+
+    # Add Save & Show Allocation button and persist allocation result
     if user_df is not None:
         # Validate columns
         required_cols = {"User ID", "Name", "Area"}
@@ -261,56 +283,46 @@ def poc_data_upload():
         st.subheader("📋 User Data Preview")
         st.dataframe(user_df, use_container_width=True)
 
-        # Enhance with coordinates (using Area)
-        user_df_for_coords = user_df.rename(columns={"User ID": "User"})
-        with st.spinner("🔍 Fetching coordinates from database..."):
-            enhanced_df, missing_locations = enhance_user_data_with_coordinates(user_df_for_coords)
+        if 'show_allocation_result' not in st.session_state:
+            st.session_state.show_allocation_result = False
 
-        if missing_locations:
-            st.warning(f"⚠️ Could not find coordinates for {len(missing_locations)} locations:")
-            for loc in missing_locations[:10]:  # Show first 10
-                st.write(f"- {loc}")
-            if len(missing_locations) > 10:
-                st.write(f"... and {len(missing_locations) - 10} more")
+        if st.button("💾 Save & Show Allocation", key="save_and_show_allocation"):
+            # Enhance with coordinates (using Area)
+            user_df_for_coords = user_df.rename(columns={"User ID": "User"})
+            with st.spinner("🔍 Fetching coordinates from database..."):
+                enhanced_df, missing_locations = enhance_user_data_with_coordinates(user_df_for_coords)
 
-        if not enhanced_df.empty:
-            st.success(f"✅ Successfully found coordinates for {len(enhanced_df)} users")
+            if missing_locations:
+                st.warning(f"⚠️ Could not find coordinates for {len(missing_locations)} locations:")
+                for loc in missing_locations[:10]:  # Show first 10
+                    st.write(f"- {loc}")
+                if len(missing_locations) > 10:
+                    st.write(f"... and {len(missing_locations) - 10} more")
 
-            # Validate enhanced data has required columns for cab allocation
-            required_cols2 = {"User", "Area", "Latitude", "Longitude"}
-            if required_cols2.issubset(enhanced_df.columns):
-                # Run cab allocation logic (same as original)
-                with st.spinner("🚕 Calculating cab allocation..."):
-                    result_df, cab_route_map_file = run_cab_allocation(enhanced_df)
+            if not enhanced_df.empty:
+                st.success(f"✅ Successfully found coordinates for {len(enhanced_df)} users")
 
-                # Store results in session state
-                st.session_state.cab_allocation_result = result_df
-                st.session_state.cab_route_map_file = cab_route_map_file
-                st.session_state.enhanced_user_data = enhanced_df
+                # Validate enhanced data has required columns for cab allocation
+                required_cols2 = {"User", "Area", "Latitude", "Longitude"}
+                if required_cols2.issubset(enhanced_df.columns):
+                    # Run cab allocation logic (same as original)
+                    with st.spinner("🚕 Calculating cab allocation..."):
+                        result_df, cab_route_map_file = run_cab_allocation(enhanced_df)
 
-                st.success("✅ Cab Allocation Completed")
+                    # Store results in session state
+                    st.session_state.cab_allocation_result = result_df
+                    st.session_state.cab_route_map_file = cab_route_map_file
+                    st.session_state.enhanced_user_data = enhanced_df
 
-                # Show navigation buttons
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("📊 View Cab Allocation", use_container_width=True):
-                        st.session_state.poc_page = "allocation"
-                        st.rerun()
-                with col2:
-                    if st.button("🗺️ View Route Map", use_container_width=True):
-                        st.session_state.poc_page = "map"
-                        st.rerun()
-                with col3:
-                    # Show Download Link for Excel
-                    output_excel = os.path.join("Output", "cab_allocation_output.xlsx")
-                    os.makedirs(os.path.dirname(output_excel), exist_ok=True)
-                    result_df.to_excel(output_excel, index=False)
-                    with open(output_excel, "rb") as f:
-                        st.download_button("⬇️ Download Excel", f, file_name="cab_allocation.xlsx", use_container_width=True)
+                    st.success("✅ Cab Allocation Completed - Redirecting to Allocation Page...")
+                    
+                    # Navigate to allocation page
+                    st.session_state.poc_page = "allocation"
+                    st.rerun()
+                else:
+                    st.error("❌ Could not process data - missing coordinate information")
             else:
-                st.error("❌ Could not process data - missing coordinate information")
-        else:
-            st.error("❌ No valid location data found")
+                st.error("❌ No valid location data found")
 
 def poc_allocation_management():
     """POC cab allocation management page"""
@@ -359,194 +371,219 @@ def poc_allocation_management():
         st.warning("⚠️ No cab groups found.")
         return
     
-    # Add new participant section
-    with st.expander("➕ Add New Participant", expanded=False):
-            col1, col2, col3, col4 = st.columns(4)
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["📊 Detailed View", "📋 Grid View"])
+    
+    with tab2:
+        # Grid View - Simple table format
+        st.subheader("📋 Allocation Grid View")
+        if not allocation_df.empty:
+            # Create a clean view with essential columns
+            grid_df = allocation_df[['User', 'Area', 'Cab Group', 'Pickup Order']].copy()
+            grid_df = grid_df.sort_values(['Cab Group', 'Pickup Order'])
+            st.dataframe(grid_df, use_container_width=True, hide_index=True)
+            
+            # Summary statistics
+            st.subheader("📈 Summary Statistics")
+            col1, col2, col3 = st.columns(3)
             with col1:
-                new_user = st.text_input("User ID", key="new_user_id")
+                st.metric("Total Participants", len(allocation_df))
             with col2:
-                # Get available areas from database
-                available_areas = db.get_base_locations()['area'].tolist() if not db.get_base_locations().empty else []
-                new_area = st.selectbox("Select Area", options=available_areas, key="new_area")
+                st.metric("Total Cabs", len(cab_groups))
             with col3:
-                new_cab = st.selectbox("Assign to Cab", options=sorted(cab_groups), key="new_cab")
-            with col4:
-                if st.button("Add Participant", type="primary"):
-                    if new_user and new_area:
-                        # Get coordinates for the selected area
-                        location_data = db.search_location_by_area(new_area)
-                        if location_data:
-                            # Create new row
-                            max_pickup_order = st.session_state.modified_allocation[
-                                st.session_state.modified_allocation['Cab Group'] == new_cab
-                            ]['Pickup Order'].max() if not st.session_state.modified_allocation[
-                                st.session_state.modified_allocation['Cab Group'] == new_cab
-                            ].empty else 0
-                            
-                            new_row = pd.DataFrame({
-                                'User': [new_user],
-                                'Area': [new_area],
-                                'Latitude': [location_data['Latitude']],
-                                'Longitude': [location_data['Longitude']],
-                                'Cab Group': [new_cab],
-                                'Pickup Order': [max_pickup_order + 1]
-                            })
-                            
-                            # Add to allocation
-                            st.session_state.modified_allocation = pd.concat([
-                                st.session_state.modified_allocation, new_row
-                            ], ignore_index=True)
-                            
-                            # Regenerate map
-                            regenerate_map_with_allocation()
-                            st.success(f"✅ Added {new_user} to Cab {new_cab}!")
-                            st.rerun()
+                avg_passengers = len(allocation_df) / len(cab_groups) if len(cab_groups) > 0 else 0
+                st.metric("Avg Passengers/Cab", f"{avg_passengers:.1f}")
+    
+    with tab1:
+        # Detailed View - Add new participant section
+        with st.expander("➕ Add New Participant", expanded=False):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    new_user = st.text_input("User ID", key="new_user_id")
+                with col2:
+                    # Get available areas from database
+                    available_areas = db.get_base_locations()['area'].tolist() if not db.get_base_locations().empty else []
+                    new_area = st.selectbox("Select Area", options=available_areas, key="new_area")
+                with col3:
+                    new_cab = st.selectbox("Assign to Cab", options=sorted(cab_groups), key="new_cab")
+                with col4:
+                    if st.button("Add Participant", type="primary"):
+                        if new_user and new_area:
+                            # Get coordinates for the selected area
+                            location_data = db.search_location_by_area(new_area)
+                            if location_data:
+                                # Create new row
+                                max_pickup_order = st.session_state.modified_allocation[
+                                    st.session_state.modified_allocation['Cab Group'] == new_cab
+                                ]['Pickup Order'].max() if not st.session_state.modified_allocation[
+                                    st.session_state.modified_allocation['Cab Group'] == new_cab
+                                ].empty else 0
+                                
+                                new_row = pd.DataFrame({
+                                    'User': [new_user],
+                                    'Area': [new_area],
+                                    'Latitude': [location_data['Latitude']],
+                                    'Longitude': [location_data['Longitude']],
+                                    'Cab Group': [new_cab],
+                                    'Pickup Order': [max_pickup_order + 1]
+                                })
+                                
+                                # Add to allocation
+                                st.session_state.modified_allocation = pd.concat([
+                                    st.session_state.modified_allocation, new_row
+                                ], ignore_index=True)
+                                
+                                # Regenerate map
+                                regenerate_map_with_allocation()
+                                st.success(f"✅ Added {new_user} to Cab {new_cab}!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Could not find coordinates for selected area")
                         else:
-                            st.error("❌ Could not find coordinates for selected area")
-                    else:
-                        st.error("❌ Please fill all fields")
-    
-    # Create new cab option
-    with st.expander("🚗 Create New Cab", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Create New Cab", type="secondary"):
-                    # Find next available cab number
-                    max_cab = max(cab_groups) if cab_groups.size > 0 else -1
-                    new_cab_number = max_cab + 1
-                    
-                    # Create empty cab (will show in selectboxes for future use)
-                    st.success(f"✅ Cab {new_cab_number} is ready for assignments!")
-                    st.info("You can now assign participants to this cab using the 'Add New Participant' section above.")
-            with col2:
-                st.write("**Current Cabs:**")
-                for cab in sorted(cab_groups):
-                    passenger_count = len(allocation_df[allocation_df['Cab Group'] == cab])
-                    st.write(f"Cab {cab}: {passenger_count} passengers")
-    
-    # Display cab groups
-    cab_groups = allocation_df['Cab Group'].unique()
+                            st.error("❌ Please fill all fields")
+        
+        # Create new cab option
+        with st.expander("🚗 Create New Cab", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Create New Cab", type="secondary"):
+                        # Find next available cab number
+                        max_cab = max(cab_groups) if cab_groups.size > 0 else -1
+                        new_cab_number = max_cab + 1
+                        
+                        # Create empty cab (will show in selectboxes for future use)
+                        st.success(f"✅ Cab {new_cab_number} is ready for assignments!")
+                        st.info("You can now assign participants to this cab using the 'Add New Participant' section above.")
+                with col2:
+                    st.write("**Current Cabs:**")
+                    for cab in sorted(cab_groups):
+                        passenger_count = len(allocation_df[allocation_df['Cab Group'] == cab])
+                        # Add warning for overcapacity cabs
+                        status = "⚠️ OVERCAPACITY" if passenger_count > 6 else "✅ OK"
+                        st.write(f"Cab {cab}: {passenger_count} passengers {status}")
     
     # Cab Statistics Summary
     st.subheader("📊 Cab Statistics")
     if len(cab_groups) > 0:
-            # Display all cabs in a responsive grid
-            
-            # First row (up to 4 cabs)
-            first_row_cabs = list(sorted(cab_groups))[:4]
-            if first_row_cabs:
-                cols1 = st.columns(len(first_row_cabs))
-                for i, cab_group in enumerate(first_row_cabs):
-                    cab_data = allocation_df[allocation_df['Cab Group'] == cab_group]
-                    passenger_count = len(cab_data)
-                    
-                    with cols1[i]:
-                        color = "🟢" if passenger_count <= 6 else "🔴"
-                        st.metric(
-                            f"🚗 Cab {cab_group}", 
-                            f"{passenger_count}/6",
-                            delta=f"{color} {'OK' if passenger_count <= 6 else 'Overcrowded'}"
-                        )
-            
-            # Second row (remaining cabs if any)
-            remaining_cabs = list(sorted(cab_groups))[4:]
-            if remaining_cabs:
-                cols2 = st.columns(len(remaining_cabs))
-                for i, cab_group in enumerate(remaining_cabs):
-                    cab_data = allocation_df[allocation_df['Cab Group'] == cab_group]
-                    passenger_count = len(cab_data)
-                    with cols2[i]:
-                        color = "🟢" if passenger_count <= 6 else "🔴"
-                        st.metric(
-                            f"🚗 Cab {cab_group}", 
-                            f"{passenger_count}/6",
-                            delta=f"{color} {'OK' if passenger_count <= 6 else 'Overcrowded'}"
-                        )
-    
-    st.divider()  # Add visual separator
-    
-    for cab_group in sorted(cab_groups):
-        with st.expander(f"🚗 Cab {cab_group} ({len(allocation_df[allocation_df['Cab Group'] == cab_group])} passengers)", expanded=True):
-            cab_data = allocation_df[allocation_df['Cab Group'] == cab_group].copy()
-            
-            st.write("**Current Passengers:**")
-            
-            # Create editable table for this cab
-            for idx, row in cab_data.iterrows():
-                col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 2, 1])
+        # Display all cabs in a responsive grid
+        
+        # First row (up to 4 cabs)
+        first_row_cabs = list(sorted(cab_groups))[:4]
+        if first_row_cabs:
+            cols1 = st.columns(len(first_row_cabs))
+            for i, cab_group in enumerate(first_row_cabs):
+                cab_data = allocation_df[allocation_df['Cab Group'] == cab_group]
+                passenger_count = len(cab_data)
                 
-                with col1:
-                    st.write(f"**{row['User']}**")
-                with col2:
-                    st.write(f"{row['Area']}")
-                with col3:
-                    st.write(f"Order: {row['Pickup Order']}")
-                with col4:
-                    # Option to move to different cab
-                    new_cab = st.selectbox(
-                        "Move to Cab:", 
-                        options=sorted(cab_groups), 
-                        index=list(sorted(cab_groups)).index(cab_group),
-                        key=f"cab_select_{idx}"
+                with cols1[i]:
+                    color = "🟢" if passenger_count <= 6 else "🔴"
+                    st.metric(
+                        f"🚗 Cab {cab_group}", 
+                        f"{passenger_count}/6",
+                        delta=f"{color} {'OK' if passenger_count <= 6 else 'OVERCAPACITY'}"
                     )
-                    if new_cab != cab_group:
-                        if st.button("Move", key=f"move_{idx}"):
-                            # Update cab group
-                            st.session_state.modified_allocation.loc[idx, 'Cab Group'] = new_cab
-                            # Recalculate pickup orders
-                            update_pickup_orders()
-                            # Auto-regenerate map with new allocation
-                            regenerate_map_with_allocation()
-                            st.success(f"✅ Moved {row['User']} to Cab {new_cab} and updated map!")
-                            st.rerun()
-                with col5:
-                    # Option to remove passenger
-                    if f"confirm_remove_{idx}" not in st.session_state:
-                        st.session_state[f"confirm_remove_{idx}"] = False
-                    
-                    if not st.session_state[f"confirm_remove_{idx}"]:
-                        if st.button("❌", key=f"remove_{idx}", help="Remove passenger"):
-                            st.session_state[f"confirm_remove_{idx}"] = True
-                            st.rerun()
-                    else:
-                        col_yes, col_no = st.columns(2)
-                        with col_yes:
-                            if st.button("✅", key=f"confirm_yes_{idx}", help="Confirm removal"):
-                                st.session_state.modified_allocation = st.session_state.modified_allocation.drop(idx)
-                                update_pickup_orders()
-                                # Auto-regenerate map after removal
-                                regenerate_map_with_allocation()
-                                st.session_state[f"confirm_remove_{idx}"] = False
-                                st.success(f"✅ Removed {row['User']} and updated map!")
-                                st.rerun()
-                        with col_no:
-                            if st.button("❌", key=f"cancel_{idx}", help="Cancel removal"):
-                                st.session_state[f"confirm_remove_{idx}"] = False
-                                st.rerun()
-            
-            # Reorder pickup sequence for this cab
-            st.write("**Reorder Pickup Sequence:**")
-            cab_passengers = allocation_df[allocation_df['Cab Group'] == cab_group]['User'].tolist()
-            
-            if len(cab_passengers) > 1:
-                new_order = st.multiselect(
-                    f"Drag to reorder pickup sequence for Cab {cab_group}:",
-                    options=cab_passengers,
-                    default=cab_passengers,
-                    key=f"reorder_{cab_group}"
-                )
+        
+        # Second row (remaining cabs if any)
+        remaining_cabs = list(sorted(cab_groups))[4:]
+        if remaining_cabs:
+            cols2 = st.columns(len(remaining_cabs))
+            for i, cab_group in enumerate(remaining_cabs):
+                cab_data = allocation_df[allocation_df['Cab Group'] == cab_group]
+                passenger_count = len(cab_data)
+                with cols2[i]:
+                    color = "🟢" if passenger_count <= 6 else "🔴"
+                    st.metric(
+                        f"🚗 Cab {cab_group}", 
+                        f"{passenger_count}/6",
+                        delta=f"{color} {'OK' if passenger_count <= 6 else 'OVERCAPACITY'}"
+                    )
+    
+    # Move detailed cab management into tab1
+    with tab1:
+        st.divider()  # Add visual separator
+        
+        for cab_group in sorted(cab_groups):
+            with st.expander(f"🚗 Cab {cab_group} ({len(allocation_df[allocation_df['Cab Group'] == cab_group])} passengers)", expanded=True):
+                cab_data = allocation_df[allocation_df['Cab Group'] == cab_group].copy()
                 
-                if len(new_order) == len(cab_passengers) and new_order != cab_passengers:
-                    if st.button(f"Apply New Order for Cab {cab_group}", key=f"apply_order_{cab_group}"):
-                        # Update pickup orders
-                        for i, user in enumerate(new_order):
-                            mask = (st.session_state.modified_allocation['Cab Group'] == cab_group) & \
-                                   (st.session_state.modified_allocation['User'] == user)
-                            st.session_state.modified_allocation.loc[mask, 'Pickup Order'] = i + 1
-                        # Auto-regenerate map with new pickup order
-                        regenerate_map_with_allocation()
-                        st.success(f"✅ Updated pickup order for Cab {cab_group} and updated map!")
-                        st.rerun()
+                st.write("**Current Passengers:**")
+                
+                # Create editable table for this cab
+                for idx, row in cab_data.iterrows():
+                    col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 2, 1])
+                    
+                    with col1:
+                        st.write(f"**{row['User']}**")
+                    with col2:
+                        st.write(f"{row['Area']}")
+                    with col3:
+                        st.write(f"Order: {row['Pickup Order']}")
+                    with col4:
+                        # Option to move to different cab
+                        new_cab = st.selectbox(
+                            "Move to Cab:", 
+                            options=sorted(cab_groups), 
+                            index=list(sorted(cab_groups)).index(cab_group),
+                            key=f"cab_select_{idx}"
+                        )
+                        if new_cab != cab_group:
+                            if st.button("Move", key=f"move_{idx}"):
+                                # Update cab group
+                                st.session_state.modified_allocation.loc[idx, 'Cab Group'] = new_cab
+                                # Recalculate pickup orders
+                                update_pickup_orders()
+                                # Auto-regenerate map with new allocation
+                                regenerate_map_with_allocation()
+                                st.success(f"✅ Moved {row['User']} to Cab {new_cab} and updated map!")
+                                st.rerun()
+                    with col5:
+                        # Option to remove passenger
+                        if f"confirm_remove_{idx}" not in st.session_state:
+                            st.session_state[f"confirm_remove_{idx}"] = False
+                        
+                        if not st.session_state[f"confirm_remove_{idx}"]:
+                            if st.button("❌", key=f"remove_{idx}", help="Remove passenger"):
+                                st.session_state[f"confirm_remove_{idx}"] = True
+                                st.rerun()
+                        else:
+                            col_yes, col_no = st.columns(2)
+                            with col_yes:
+                                if st.button("✅", key=f"confirm_yes_{idx}", help="Confirm removal"):
+                                    st.session_state.modified_allocation = st.session_state.modified_allocation.drop(idx)
+                                    update_pickup_orders()
+                                    # Auto-regenerate map after removal
+                                    regenerate_map_with_allocation()
+                                    st.session_state[f"confirm_remove_{idx}"] = False
+                                    st.success(f"✅ Removed {row['User']} and updated map!")
+                                    st.rerun()
+                            with col_no:
+                                if st.button("❌", key=f"cancel_{idx}", help="Cancel removal"):
+                                    st.session_state[f"confirm_remove_{idx}"] = False
+                                    st.rerun()
+                
+                # Reorder pickup sequence for this cab
+                st.write("**Reorder Pickup Sequence:**")
+                cab_passengers = allocation_df[allocation_df['Cab Group'] == cab_group]['User'].tolist()
+                
+                if len(cab_passengers) > 1:
+                    new_order = st.multiselect(
+                        f"Drag to reorder pickup sequence for Cab {cab_group}:",
+                        options=cab_passengers,
+                        default=cab_passengers,
+                        key=f"reorder_{cab_group}"
+                    )
+                    
+                    if len(new_order) == len(cab_passengers) and new_order != cab_passengers:
+                        if st.button(f"Apply New Order for Cab {cab_group}", key=f"apply_order_{cab_group}"):
+                            # Update pickup orders
+                            for i, user in enumerate(new_order):
+                                mask = (st.session_state.modified_allocation['Cab Group'] == cab_group) & \
+                                       (st.session_state.modified_allocation['User'] == user)
+                                st.session_state.modified_allocation.loc[mask, 'Pickup Order'] = i + 1
+                            # Auto-regenerate map with new pickup order
+                            regenerate_map_with_allocation()
+                            st.success(f"✅ Updated pickup order for Cab {cab_group} and updated map!")
+                            st.rerun()
     
     # Save Changes section - moved outside the cab_group loop
     st.subheader("💾 Save Changes")

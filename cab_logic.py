@@ -55,14 +55,16 @@ def run_cab_allocation(df):
         
         # If group size is OK, assign directly
         if len(group_df) <= MAX_PEOPLE_PER_CAB:
-            group_df['Final Cab'] = f'Cab-{group}-1'
+            group_df['Cab Group'] = group  # Keep original group number if within capacity
             final_allocations.append(group_df)
         else:
-            # Split into subgroups
+            # Split into subgroups and assign new cab group numbers
             num_cabs = math.ceil(len(group_df) / MAX_PEOPLE_PER_CAB)
+            max_existing_group = df['Cab Group'].max()
             for i in range(num_cabs):
                 sub_df = group_df.iloc[i * MAX_PEOPLE_PER_CAB: (i + 1) * MAX_PEOPLE_PER_CAB].copy()
-                sub_df['Final Cab'] = f'Cab-{group}-{i+1}'
+                # Assign new unique cab group number for split groups
+                sub_df['Cab Group'] = max_existing_group + 1 + i
                 final_allocations.append(sub_df)
     
     # Combine all
@@ -71,9 +73,9 @@ def run_cab_allocation(df):
     # -------------------------------
     # STEP 5: Output Cab Assignments
     # -------------------------------
-    cab_groups = result_df.groupby('Final Cab')
+    cab_groups = result_df.groupby('Cab Group')
     for cab, members in cab_groups:
-        print(f"\n🚕 {cab}:")
+        print(f"\n🚕 Cab {cab}:")
         for _, row in members.iterrows():
             print(f"   {row['User']} - {row['Area']}")
     
@@ -88,11 +90,11 @@ def run_cab_allocation(df):
     
     # Add user locations
     for cab, members in cab_groups:
-        color = cab_colors[hash(cab) % len(cab_colors)]
+        color = cab_colors[hash(f"Cab {cab}") % len(cab_colors)]
         for _, row in members.iterrows():
             folium.Marker(
                 location=[row['Latitude'], row['Longitude']],
-                tooltip=f"{row['User']} ({cab})",
+                tooltip=f"{row['User']} (Cab {cab})",
                 icon=folium.Icon(color=color)
             ).add_to(m)
 
@@ -110,11 +112,11 @@ def run_cab_allocation(df):
     
     # Add combined markers for users in the same location
     for (lat, lon), group in grouped:
-        first_cab = group['Final Cab'].iloc[0]  # Get the cab for color coding
-        color = cab_colors[hash(first_cab) % len(cab_colors)]
+        first_cab = group['Cab Group'].iloc[0]  # Get the cab for color coding
+        color = cab_colors[hash(f"Cab {first_cab}") % len(cab_colors)]
     
         tooltip_text = "\n".join(
-            f"{row['User']} ({row['Final Cab']}) - {row['Area']}" for _, row in group.iterrows()
+            f"{row['User']} (Cab {row['Cab Group']}) - {row['Area']}" for _, row in group.iterrows()
         )
     
         folium.Marker(
@@ -156,10 +158,10 @@ def run_cab_allocation(df):
     # Apply optimization for each cab group
     optimized_routes = []
     
-    for cab, members in result_df.groupby('Final Cab'):
+    for cab, members in result_df.groupby('Cab Group'):
         ordered_df = sort_pickup_order(members, DESTINATION)
         ordered_df['Pickup Order'] = range(1, len(ordered_df) + 1)
-        ordered_df['Final Cab'] = cab
+        ordered_df['Cab Group'] = cab
         optimized_routes.append(ordered_df)
     
     # Combine all optimized pickup orders
@@ -169,9 +171,9 @@ def run_cab_allocation(df):
     # STEP 8: Display Optimized Routes
     # -------------------------------
     
-    cab_groups = final_route_df.groupby('Final Cab')
+    cab_groups = final_route_df.groupby('Cab Group')
     for cab, members in cab_groups:
-        print(f"\n🚕 {cab} Pickup Order:")
+        print(f"\n🚕 Cab {cab} Pickup Order:")
         for _, row in members.sort_values('Pickup Order').iterrows():
             print(f"   {row['Pickup Order']}: {row['User']} - {row['Area']}")
 
@@ -196,15 +198,15 @@ def run_cab_allocation(df):
     folium.Marker(location=DESTINATION, tooltip='Destination', icon=folium.Icon(color='black')).add_to(m)
     
     # Loop over each cab group
-    for cab, members in final_route_df.groupby('Final Cab'):
-        color = cab_colors[hash(cab) % len(cab_colors)]
+    for cab, members in final_route_df.groupby('Cab Group'):
+        color = cab_colors[hash(f"Cab {cab}") % len(cab_colors)]
     
         # Sort by pickup order
         for _, row in members.sort_values('Pickup Order').iterrows():
             folium.Marker(
                 location=[row['Latitude'], row['Longitude']],
-                tooltip=f"Pickup {row['Pickup Order']}: {row['User']} ({cab}) - {row['Area']}",
-                icon=folium.DivIcon(html=f"""<div style="font-size: 12pt; color : {color}">{row['Pickup Order']}</div>""")
+                tooltip=f"Pickup {row['Pickup Order']}: {row['User']} (Cab {cab}) - {row['Area']}",
+                icon=folium.Icon(color=color, icon='user')
             ).add_to(m)
     
     # Save the map
