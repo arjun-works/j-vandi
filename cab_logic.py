@@ -11,7 +11,7 @@ def run_cab_allocation(df):
     # -------------------------------
     # CONFIGURATION
     # -------------------------------
-    EXCEL_FILE = r"C:\Users\2322594\OneDrive - Cognizant\Outreach\Cab_Nodal_Points\sample_data.xlsx"  # Replace with your file name
+    # EXCEL_FILE variable removed - data is passed as DataFrame parameter
     DESTINATION = (13.171354, 80.026655)  # Kilakondaiyur
     DISTANCE_THRESHOLD_METERS = 4000  # Cluster max distance: 4 km
     MAX_PEOPLE_PER_CAB = 6
