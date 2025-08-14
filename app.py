@@ -215,8 +215,27 @@ def poc_data_upload():
     st.subheader("📤 Upload User Data")
     st.write("Upload Excel file with user data (User ID, Name, Area)")
 
-    # Download demo data button
+
+    # Ensure demo Excel file exists and is a valid .xlsx
     demo_path = os.path.join(os.getcwd(), "demo_user_data.xlsx")
+    if not os.path.exists(demo_path):
+        demo_data = {
+            "User ID": [f"U{str(i+1).zfill(3)}" for i in range(30)],
+            "Name": [n for n in [
+                "Arun", "Bala", "Chitra", "Deepak", "Elango", "Farah", "Ganesh", "Hema", "Irfan", "Janani",
+                "Karthik", "Lavanya", "Manoj", "Nisha", "Omkar", "Priya", "Quincy", "Raj", "Swetha", "Tarun",
+                "Usha", "Vikram", "Wasim", "Xavier", "Yamini", "Zara", "Anil", "Bhavana", "Chandan", "Divya"
+            ]],
+            "Area": [a for a in [
+                "Anna Nagar", "T Nagar", "Velachery", "Adyar", "Guindy", "Perungudi", "Thiruvanmiyur", "Ambattur", "Porur", "Sholinganallur",
+                "Medavakkam", "Chromepet", "Avadi", "KK Nagar", "Perambur", "Egmore", "Triplicane", "West Mambalam", "Virugambakkam", "Thoraipakkam",
+                "Adambakkam", "Thirumangalam", "Guindy", "Anna Nagar", "Velachery", "Adyar", "Perungudi", "Thiruvanmiyur", "Ambattur", "Porur"
+            ]]
+        }
+        demo_df = pd.DataFrame(demo_data)
+        demo_df.to_excel(demo_path, index=False)
+
+    # Download demo data button
     with open(demo_path, "rb") as f:
         st.download_button("⬇️ Download Demo Excel", f, file_name="demo_user_data.xlsx", use_container_width=True)
 
@@ -436,14 +455,13 @@ def poc_allocation_management():
                 for i, cab_group in enumerate(remaining_cabs):
                     cab_data = allocation_df[allocation_df['Cab Group'] == cab_group]
                     passenger_count = len(cab_data)
-                
-                with cols2[i]:
-                    color = "🟢" if passenger_count <= 6 else "🔴"
-                    st.metric(
-                        f"🚗 Cab {cab_group}", 
-                        f"{passenger_count}/6",
-                        delta=f"{color} {'OK' if passenger_count <= 6 else 'Overcrowded'}"
-                    )
+                    with cols2[i]:
+                        color = "🟢" if passenger_count <= 6 else "🔴"
+                        st.metric(
+                            f"🚗 Cab {cab_group}", 
+                            f"{passenger_count}/6",
+                            delta=f"{color} {'OK' if passenger_count <= 6 else 'Overcrowded'}"
+                        )
     
     st.divider()  # Add visual separator
     
@@ -628,9 +646,10 @@ def poc_map_view():
     
     try:
         st.subheader("🗺️ Pickup Route Map")
+        import streamlit.components.v1 as components
         with open(st.session_state.cab_route_map_file, "r", encoding="utf-8") as f:
             html_data = f.read()
-            st.components.v1.html(html_data, height=600, scrolling=True)
+            components.html(html_data, height=600, scrolling=True)
     except Exception as e:
         st.error(f"❌ Error loading map: {str(e)}")
 
